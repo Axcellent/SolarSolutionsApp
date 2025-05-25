@@ -1,25 +1,37 @@
+import 'package:esp32_sensor_monitor/data.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 import 'dart:math';
-import 'data.dart';
 
 class StatsScreen extends StatelessWidget {
   const StatsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Рассчитываем статистику
+    print(sensorHistory.length);
+    if (sensorHistory.isEmpty) {
+      return Scaffold(
+          appBar: AppBar(
+            title: const Text('Статистика датчиков'),
+            centerTitle: false,
+          ),
+          body: Center(
+              child: Text('Для начала нажмите на кнопку получения данных.')));
+    }
+
     final stats = _calculateStats(sensorHistory);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Статистика датчиков'),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            _buildAdviceCard(stats),
+            const SizedBox(height: 20),
             _buildSummaryCard(stats),
             const SizedBox(height: 20),
             _buildGaugeSection(stats),
@@ -29,6 +41,64 @@ class StatsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildAdviceCard(SensorStats stats) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              _getAnalys(stats),
+              style: TextStyle(
+                  color: stats.voltage.deviation > 3
+                      ? Colors.red
+                      : Colors.primaries.first,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getAnalys(SensorStats stats) {
+    String res = '';
+    if (stats.voltage.deviation > 3.5) {
+      res += 'Внимание! Скачки напряжения!\n';
+      if (stats.voltage.average < 2) {
+        res += 'Внимание! Неисправность станции!\n';
+      }
+    }
+    if (stats.voltage.current < 2) {
+      res += 'Низкое напряжение.\n';
+    } else if (stats.voltage.current > 6) {
+      res += 'Высокое напряжение.\n';
+    }
+
+    if (stats.temperature.deviation > 10) {
+      res += 'Внимание! Серьёзные климатические изменения!\n';
+    }
+    if (stats.temperature.current < -20) {
+      res += 'Низкая температура.\n';
+    } else if (stats.temperature.current > 30) {
+      res += 'Высокая температура.\n';
+    }
+
+    if (stats.light.current < 1000 && stats.light.deviation > 5000) {
+      res += 'Внимание! Потерян доступ к свету!\n';
+    }
+    if (stats.light.current < 100) {
+      res += 'Плохая освещенность.\n';
+    }
+
+    return res;
   }
 
   Widget _buildSummaryCard(SensorStats stats) {
@@ -73,7 +143,7 @@ class StatsScreen extends StatelessWidget {
         child: Column(
           children: [
             const Text(
-              'Текущие показатели',
+              'Текущие значения на шкалах',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
@@ -82,17 +152,21 @@ class StatsScreen extends StatelessWidget {
               child: SfRadialGauge(
                 axes: <RadialAxis>[
                   _buildGaugeAxis(
-                    title: 'Напряжение',
+                    title: 'В',
                     value: stats.voltage.current,
-                    min: stats.voltage.min,
-                    max: stats.voltage.max,
+                    min: 0,
+                    max: 8,
                     ranges: [
                       GaugeRange(
-                          startValue: 3.0, endValue: 3.6, color: Colors.red),
+                          startValue: 0.0, endValue: 1.5, color: Colors.red),
                       GaugeRange(
-                          startValue: 3.6, endValue: 4.2, color: Colors.green),
+                          startValue: 1.5, endValue: 2.5, color: Colors.yellow),
                       GaugeRange(
-                          startValue: 4.2, endValue: 5.0, color: Colors.red),
+                          startValue: 2.5, endValue: 5.5, color: Colors.green),
+                      GaugeRange(
+                          startValue: 5.5, endValue: 6.5, color: Colors.yellow),
+                      GaugeRange(
+                          startValue: 6.5, endValue: 8.0, color: Colors.red),
                     ],
                   ),
                 ],
@@ -103,21 +177,46 @@ class StatsScreen extends StatelessWidget {
               child: SfRadialGauge(
                 axes: <RadialAxis>[
                   _buildGaugeAxis(
-                    title: 'Температура',
+                    title: '°C',
                     value: stats.temperature.current,
-                    min: stats.temperature.min,
-                    max: stats.temperature.max,
+                    min: -40,
+                    max: 40,
                     ranges: [
                       GaugeRange(
-                          startValue: -30, endValue: -20, color: Colors.red),
+                          startValue: -40, endValue: -30, color: Colors.red),
                       GaugeRange(
-                          startValue: -20, endValue: 0, color: Colors.yellow),
+                          startValue: -30, endValue: -20, color: Colors.yellow),
                       GaugeRange(
-                          startValue: 0, endValue: 25, color: Colors.green),
+                          startValue: -20, endValue: 25, color: Colors.green),
                       GaugeRange(
                           startValue: 25, endValue: 30, color: Colors.yellow),
                       GaugeRange(
                           startValue: 30, endValue: 40, color: Colors.red),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 200,
+              child: SfRadialGauge(
+                axes: <RadialAxis>[
+                  _buildGaugeAxis(
+                    title: 'Лк',
+                    value: stats.light.current,
+                    min: 0,
+                    max: 50000,
+                    ranges: [
+                      GaugeRange(
+                          startValue: 0, endValue: 1000, color: Colors.red),
+                      GaugeRange(
+                          startValue: 1000,
+                          endValue: 10000,
+                          color: Colors.yellow),
+                      GaugeRange(
+                          startValue: 10000,
+                          endValue: 50000,
+                          color: Colors.green),
                     ],
                   ),
                 ],
@@ -151,7 +250,7 @@ class StatsScreen extends StatelessWidget {
           widget: Text(
             '$title\n${value.toStringAsFixed(2)}',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           ),
           angle: 90,
           positionFactor: 0.5,

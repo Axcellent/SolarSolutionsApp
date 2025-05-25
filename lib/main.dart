@@ -27,12 +27,12 @@ class MyApp extends StatelessWidget {
     final settings = Provider.of<AppSettings>(context);
 
     return MaterialApp(
-      title: 'ESP32 Sensor Monitor',
+      title: 'Приложение',
       theme: settings.isDarkMode
           ? ThemeData.dark().copyWith(
               colorScheme: ColorScheme.dark(
-                primary: Colors.blueGrey,
-                secondary: Colors.cyan[300]!,
+                primary: const Color.fromARGB(255, 139, 96, 96),
+                secondary: const Color.fromARGB(255, 225, 77, 77)!,
               ),
             )
           : ThemeData.light().copyWith(
@@ -59,34 +59,32 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<Widget> _screens = [
     const SensorScreen(),
-    const SettingsScreen(),
     const StatsScreen(),
-    const SolarDashboardScreen(),
+    const SettingsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final settings = Provider.of<AppSettings>(context);
+
     return Scaffold(
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
+        useLegacyColorScheme: false,
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
+        items: [
           BottomNavigationBarItem(
             icon: Icon(Icons.monitor_heart),
             label: 'Датчики',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Настройки',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.data_saver_on),
             label: 'Статистика датчиков',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.sunny),
-            label: 'Статистика панели',
+            icon: Icon(Icons.settings),
+            label: 'Настройки',
           ),
         ],
       ),

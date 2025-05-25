@@ -1,6 +1,11 @@
+import 'package:esp32_sensor_monitor/data.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'data.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'app_settings.dart';
+import 'package:intl/intl.dart';
 
 class SensorScreen extends StatefulWidget {
   const SensorScreen({super.key});
@@ -16,81 +21,121 @@ class _SensorScreenState extends State<SensorScreen> {
   @override
   void initState() {
     super.initState();
-    _generateMockData();
+    _setupAutoRefresh();
   }
 
-  void _generateMockData() {
-    final now = DateTime.now();
-    final mockData = List.generate(20, (index) {
-      final time = now.subtract(Duration(seconds: 20 - index));
-      return SensorData(
-        voltage: 3.5 + (index % 3) * 0.2,
-        temperature: 22.0 + (index % 5),
-        light: 100 + (index % 7) * 50,
-        timestamp: time,
-      );
-    });
+  @override
+  void dispose() {
+    super.dispose();
+  }
 
-    setState(() {
-      sensorHistory = mockData;
-    });
+  void _setupAutoRefresh() {
+    final settings = Provider.of<AppSettings>(context, listen: false);
   }
 
   Future<void> _fetchData() async {
+    final settings = Provider.of<AppSettings>(context, listen: false);
+
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
 
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final response = await http
+          .get(Uri.parse('http://${settings.espIpAddress}/sensors'))
+          .timeout(Duration(seconds: 3));
 
-    final newData = SensorData(
-      voltage: 3.5 + (DateTime.now().second % 10) * 0.1,
-      temperature: 22.0 + (DateTime.now().second % 5),
-      light: 100 + (DateTime.now().second % 10) * 30,
-      timestamp: DateTime.now(),
-    );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final newData = SensorData(
+          voltage: data['voltage'].toDouble(),
+          temperature: data['temperature'].toDouble(),
+          light: data['light'].toDouble(),
+          timestamp: DateTime.now(),
+        );
 
-    setState(() {
-      sensorHistory = [...sensorHistory.take(19), newData];
-      _isLoading = false;
-    });
+        setState(() {
+          sensorHistory =
+              sensorHistory.sublist(sensorHistory.length > 19 ? 1 : 0);
+          sensorHistory.add(newData);
+        });
+      }
+    } catch (e) {
+      if (e.toString().toLowerCase().contains('failed to connect') ||
+          e.toString().toLowerCase().contains('connection failed')) {
+        setState(() {
+          _errorMessage = 'Вы не подключены к Wi-Fi сети станции. Проверьте:'
+              '\n1. Подключение к правильной Wi-Fi сети'
+              '\n2. IP адрес станции в настройках'
+              '\n3. Состояние станции (питание, индикаторы)';
+        });
+      } else if (e.toString().toLowerCase().contains('timeout') ||
+          e.toString().toLowerCase().contains('future not completed')) {
+        setState(() {
+          _errorMessage = 'Таймаут соединения. Проверьте:'
+              '\n• Доступность станции'
+              '\n• Сигнал Wi-Fi'
+              '\n• Правильность IP-адреса';
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Неизвестная ошибка: ${e.toString()}';
+        });
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Мониторинг датчиков (Демо)'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchData,
-            tooltip: 'Обновить данные',
+    return Consumer<AppSettings>(
+      builder: (context, settings, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Мониторинг датчиков'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _fetchData,
+                tooltip: 'Обновить данные',
+              ),
+            ],
           ),
+          body: _buildBody(settings),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(AppSettings settings) {
+    if (_errorMessage.isNotEmpty) {
+      return Center(child: Text(_errorMessage));
+    }
+
+    if (sensorHistory.isEmpty) {
+      return Center(
+          child: Text(_isLoading
+              ? 'Пожалуйста, подождите...'
+              : 'Для начала нажмите на кнопку для получения данных.'));
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildCurrentValues(),
+          const SizedBox(height: 24),
+          _buildVoltageChart(),
+          const SizedBox(height: 24),
+          _buildTemperatureChart(),
+          const SizedBox(height: 24),
+          _buildLightChart(),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  _buildCurrentValues(),
-                  const SizedBox(height: 24),
-                  _buildVoltageChart(),
-                  const SizedBox(height: 24),
-                  _buildTemperatureChart(),
-                  const SizedBox(height: 24),
-                  _buildLightChart(),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Демонстрационный режим: используются тестовые данные',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
     );
   }
 
@@ -145,23 +190,6 @@ class _SensorScreenState extends State<SensorScreen> {
     );
   }
 
-  // Widget _buildVoltageChart() {
-  //   return _buildChart(
-  //     title: 'Напряжение (В)',
-  //     series: [
-  //       LineSeries<SensorData, DateTime>(
-  //         dataSource: globals.sensorHistory,
-  //         xValueMapper: (data, _) => data.timestamp,
-  //         yValueMapper: (data, _) => data.voltage,
-  //         color: Colors.blue,
-  //         width: 3,
-  //         markerSettings: const MarkerSettings(isVisible: true),
-  //       ),
-  //     ],
-  //     minY: 3.0,
-  //     maxY: 4.5,
-  //   );
-  // }
   Widget _buildVoltageChart() {
     return _buildChart(
       title: 'Напряжение (В)',
@@ -176,8 +204,8 @@ class _SensorScreenState extends State<SensorScreen> {
               shape: DataMarkerType.diamond, isVisible: true),
         ),
       ],
-      minY: 3.0,
-      maxY: 4.5,
+      minY: 0.0,
+      maxY: 8.0,
     );
   }
 
@@ -194,8 +222,8 @@ class _SensorScreenState extends State<SensorScreen> {
           markerSettings: const MarkerSettings(isVisible: true),
         ),
       ],
-      minY: 20,
-      maxY: 30,
+      minY: 0,
+      maxY: 40,
     );
   }
 
@@ -213,7 +241,7 @@ class _SensorScreenState extends State<SensorScreen> {
         ),
       ],
       minY: 0,
-      maxY: 500,
+      maxY: 50000,
     );
   }
 
@@ -234,13 +262,14 @@ class _SensorScreenState extends State<SensorScreen> {
               title,
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             SizedBox(
               height: 200,
               child: SfCartesianChart(
                 primaryXAxis: DateTimeAxis(
-                  intervalType: DateTimeIntervalType.seconds,
+                  intervalType: DateTimeIntervalType.auto,
                   labelRotation: -45,
+                  dateFormat: DateFormat('dd.MM.yyyy HH:mm'),
                 ),
                 primaryYAxis: NumericAxis(
                   minimum: minY,
@@ -248,12 +277,64 @@ class _SensorScreenState extends State<SensorScreen> {
                 ),
                 series: series,
                 tooltipBehavior: TooltipBehavior(
-                  header: title,
                   enable: true,
+                  header: title,
+                  format:
+                      'Дата: {point.x}\n$title: {point.y}', // Use placeholders
                   color: Theme.of(context).canvasColor,
                   textStyle: TextStyle(
-                      color: Theme.of(context).textTheme.titleMedium?.color),
-                  format: ("Дата: point.x\n" + title + ": point.y"),
+                    color: Theme.of(context).textTheme.titleMedium?.color,
+                  ),
+                  canShowMarker: true,
+                  builder: (dynamic data, dynamic point, dynamic series,
+                      int pointIndex, int seriesIndex) {
+                    final sensorData = data as SensorData;
+                    return Container(
+                      height: 200,
+                      width: 200,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).canvasColor,
+                        borderRadius: BorderRadius.circular(4),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.color,
+                            ),
+                          ),
+                          const SizedBox(height: 0),
+                          Text(
+                            'Дата: ${DateFormat('dd.MM.yyyy').format(sensorData.timestamp)}',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.color,
+                            ),
+                          ),
+                          Text(
+                            'Время: ${DateFormat('HH:mm:ss').format(sensorData.timestamp)}',
+                          ),
+                          Text(
+                            'Значение: ${point.y.toStringAsFixed(2)}',
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

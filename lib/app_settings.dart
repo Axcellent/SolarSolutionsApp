@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppSettings with ChangeNotifier {
   bool _isDarkMode = false;
-  int _refreshInterval = 5; // секунды
+  int _refreshInterval = 3;
   String _espIpAddress = '192.168.1.100';
 
   bool get isDarkMode => _isDarkMode;
